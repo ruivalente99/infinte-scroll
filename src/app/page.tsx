@@ -1,101 +1,100 @@
-import Image from "next/image";
+"use client";
+import { useEffect, useState, useRef } from 'react';
+import { CircularBuffer } from '../utils/circularBuffer';
+
+// Define the shape of the data we expect from the API
+interface TodoItem {
+  id: number;
+  title: string;
+}
+
+const API_URL = 'https://jsonplaceholder.typicode.com/todos'; // Mock API for fetching todos
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const bufferSize: number = 20;
+  const visibleItems: number = 5; // Number of items visible on screen
+  const buffer = useRef(new CircularBuffer<string>(bufferSize)); // Using useRef to persist the buffer between renders
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const [items, setItems] = useState<string[]>([]); // State to store visible items
+  const [loading, setLoading] = useState<boolean>(true); // Loading state
+  const scrollRef = useRef<HTMLDivElement>(null); // Ref for the scrollable div
+
+  // Fetch data from the API every 5 seconds and update the buffer
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch(API_URL);
+        const data: TodoItem[] = await response.json();
+        const limitedData = data.slice(0, bufferSize); // Limit to buffer size
+        limitedData.forEach((item: TodoItem) => buffer.current.push(item.title)); // Fill the circular buffer with fetched data
+
+        // If the items are not yet set, initialize with the first set
+        if (loading) {
+          setItems(buffer.current.getBuffer().slice(0, visibleItems)); // Set initial visible items
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    };
+
+    // Initial fetch
+    fetchData();
+
+    // Fetch new data every 5 seconds
+    const intervalId = setInterval(fetchData, 5000);
+
+    return () => clearInterval(intervalId); // Clear interval on unmount
+  }, [loading]);
+
+  // Auto-scrolling effect
+  useEffect(() => {
+    if (!loading) {
+      const scrollIntervalId = setInterval(() => {
+        setItems(() => {
+          const nextItems: string[] = [];
+          for (let i = 0; i < visibleItems; i++) {
+            // Get the next item from the buffer circularly
+            const nextItem = buffer.current.buffer[(buffer.current.pointer + i) % bufferSize];
+            nextItems.push(nextItem);
+          }
+
+          // Push the buffer pointer forward to simulate "scrolling"
+          buffer.current.pointer = (buffer.current.pointer + 1) % bufferSize;
+
+          return nextItems;
+        });
+
+        if (scrollRef.current) {
+          scrollRef.current.scrollBy({
+            top: 110, // Adjust this based on item height
+            behavior: 'smooth',
+          });
+
+          // Reset the scroll position when reaching the end
+          if (scrollRef.current.scrollTop >= scrollRef.current.scrollHeight - scrollRef.current.clientHeight) {
+            scrollRef.current.scrollTop = 0;
+          }
+        }
+      }, 1000); // Auto scroll every second
+
+      return () => clearInterval(scrollIntervalId);
+    }
+  }, [loading]); // Start the effect only after the data is fetched
+
+  return (
+    <div className="flex items-center justify-center h-screen">
+      {loading ? (
+        <div>Loading...</div>
+      ) : (
+        <div ref={scrollRef} className="overflow-hidden h-[550px] w-[320px] flex flex-col">
+          {items.map((item, idx) => (
+            <div key={idx} className="flex items-center justify-center h-[100px] w-[300px] border border-gray-500 mb-2 bg-gray-200 text-black">
+              {item}
+            </div>
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
